@@ -1,0 +1,17 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <FromSource>true</FromSource>
+  </PropertyGroup>
+
+  <ItemGroup Condition="$(FromSource) != 'true'">
+    <PackageReference Include="System.DirectoryServices.Protocols" Version="8.0.0" />
+  </ItemGroup>
+
+  <ItemGroup Condition="$(FromSource) == 'true'">
+    <ProjectReference Include="..\System.DirectoryServices.Protocols\System.DirectoryServices.Protocols.csproj" />
+  </ItemGroup>
+
+</Project>
