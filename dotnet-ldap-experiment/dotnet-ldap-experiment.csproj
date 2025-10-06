@@ -7,11 +7,15 @@
   </PropertyGroup>
 
   <ItemGroup Condition="$(FromSource) != 'true'">
-    <PackageReference Include="System.DirectoryServices.Protocols" Version="8.0.0" />
+    <PackageReference Include="System.DirectoryServices.Protocols" Version="10.0.0-rc.1.25451.107" />
   </ItemGroup>
 
   <ItemGroup Condition="$(FromSource) == 'true'">
     <ProjectReference Include="..\System.DirectoryServices.Protocols\System.DirectoryServices.Protocols.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="NuGet.Versioning" Version="6.14.0" />
   </ItemGroup>
 
 </Project>

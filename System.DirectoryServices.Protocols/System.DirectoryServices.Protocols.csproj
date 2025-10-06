@@ -2,6 +2,8 @@
 
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>
+    <LangVersion>preview</LangVersion>
+    <Version>10.0.0-FromSource</Version>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <NoWarn>CS8632</NoWarn>
   </PropertyGroup>
@@ -25,6 +27,7 @@
 
   <!-- Adapted from $(DirectoryServicesRoot)System.DirectoryServices.Protocols.csproj with LinkBase everywhere and $(TargetVariant) instead of $(TargetPlatformIdentifier) -->
   <ItemGroup>
+    <Compile Include="$(DirectoryServicesRoot)System\DirectoryServices\Protocols\common\AsnWriterExtensions.cs" LinkBase="common" />
     <Compile Include="$(DirectoryServicesRoot)System\DirectoryServices\Protocols\common\AuthTypes.cs" LinkBase="common" />
     <Compile Include="$(DirectoryServicesRoot)System\DirectoryServices\Protocols\common\BerConverter.cs" LinkBase="common" />
     <Compile Include="$(DirectoryServicesRoot)System\DirectoryServices\Protocols\common\DereferenceAlias.cs" LinkBase="common" />
@@ -50,7 +53,6 @@
     <Compile Include="$(DirectoryServicesRoot)System\DirectoryServices\Protocols\ldap\LdapPartialResultsProcessor.cs" LinkBase="ldap" />
     <Compile Include="$(DirectoryServicesRoot)System\DirectoryServices\Protocols\ldap\LdapSessionOptions.cs" LinkBase="ldap" />
     <Compile Include="$(DirectoryServicesRoot)System\DirectoryServices\Protocols\Interop\SafeHandles.cs" LinkBase="Interop" />
-    <Compile Include="$(DirectoryServicesRoot)System\DirectoryServices\Protocols\Interop\SortKeyInterop.cs" LinkBase="Interop" />
 
     <Compile Include="$(CommonPath)DisableRuntimeMarshalling.cs" LinkBase="Common" />
     <Compile Include="$(CommonPath)Interop\Interop.Ldap.cs" LinkBase="Common\Interop" />
@@ -63,7 +65,6 @@
     <Compile Include="$(DirectoryServicesRoot)System\DirectoryServices\Protocols\common\QuotaControl.Windows.cs" LinkBase="common" />
     <Compile Include="$(DirectoryServicesRoot)System\DirectoryServices\Protocols\Interop\LdapPal.Windows.cs" LinkBase="Interop" />
     <Compile Include="$(DirectoryServicesRoot)System\DirectoryServices\Protocols\Interop\BerPal.Windows.cs" LinkBase="Interop" />
-    <Compile Include="$(DirectoryServicesRoot)System\DirectoryServices\Protocols\Interop\SortKeyInterop.Windows.cs" />
     <Compile Include="$(DirectoryServicesRoot)System\DirectoryServices\Protocols\ldap\LdapConnection.Windows.cs" />
     <Compile Include="$(DirectoryServicesRoot)System\DirectoryServices\Protocols\ldap\LdapSessionOptions.Windows.cs" />
     <Compile Include="$(DirectoryServicesRoot)System\DirectoryServices\Protocols\Interop\SafeHandles.Windows.cs" />
@@ -78,7 +79,6 @@
     <Compile Include="$(DirectoryServicesRoot)System\DirectoryServices\Protocols\common\QuotaControl.Linux.cs" LinkBase="common" />
     <Compile Include="$(DirectoryServicesRoot)System\DirectoryServices\Protocols\Interop\LdapPal.Linux.cs" LinkBase="Interop" />
     <Compile Include="$(DirectoryServicesRoot)System\DirectoryServices\Protocols\Interop\BerPal.Linux.cs" LinkBase="Interop" />
-    <Compile Include="$(DirectoryServicesRoot)System\DirectoryServices\Protocols\Interop\SortKeyInterop.Linux.cs" LinkBase="Interop" />
     <Compile Include="$(DirectoryServicesRoot)System\DirectoryServices\Protocols\ldap\LdapConnection.Linux.cs" LinkBase="ldap" />
     <Compile Include="$(DirectoryServicesRoot)System\DirectoryServices\Protocols\ldap\LdapSessionOptions.Linux.cs" LinkBase="ldap" />
     <Compile Include="$(DirectoryServicesRoot)System\DirectoryServices\Protocols\ldap\LocalAppContextSwitches.cs" LinkBase="ldap" />
