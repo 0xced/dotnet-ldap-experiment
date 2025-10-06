@@ -21,10 +21,22 @@ if (version.Major < 10)
     ldapConnection.SessionOptions.ProtocolVersion = 3;
 }
 
-var searchRequest = new SearchRequest(ldapBase, ldapFilter, SearchScope.Subtree, "distinguishedName");
-var response = (SearchResponse)ldapConnection.SendRequest(searchRequest);
-foreach (SearchResultEntry entry in response.Entries)
+try
 {
-    Console.WriteLine(entry.Attributes["distinguishedName"]?.GetValues(typeof(string))?.OfType<string>().FirstOrDefault());
+    var searchRequest = new SearchRequest(ldapBase, ldapFilter, SearchScope.Subtree, "distinguishedName");
+    var response = (SearchResponse)ldapConnection.SendRequest(searchRequest);
+    foreach (SearchResultEntry entry in response.Entries)
+    {
+        Console.WriteLine(entry.Attributes["distinguishedName"]?.GetValues(typeof(string))?.OfType<string>().FirstOrDefault());
+    }
+    Console.WriteLine($"Found {response.Entries.Count} entries");
+
+    return 0;
 }
-Console.WriteLine($"Found {response.Entries.Count} entries");
+catch (LdapException ldapException)
+{
+    Console.Error.WriteLine(ldapException.ServerErrorMessage);
+    Console.Error.WriteLine(ldapException);
+
+    return 1;
+}
