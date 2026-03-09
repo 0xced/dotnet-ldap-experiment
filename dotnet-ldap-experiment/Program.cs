@@ -6,7 +6,7 @@ using System.Reflection;
 using NuGet.Versioning;
 
 var ldapHost = Environment.GetEnvironmentVariable("LDAP_HOST") ?? throw new ArgumentException("The LDAP_HOST environment variable must be set.");
-var ldapBase = Environment.GetEnvironmentVariable("LDAP_BASE") ?? string.Join(',', ldapHost.Split('.').TakeLast(2).Select(e => $"DC={e}"));
+var ldapBase = Environment.GetEnvironmentVariable("LDAP_BASE");
 var ldapFilter = Environment.GetEnvironmentVariable("LDAP_FILTER") ?? "(&(objectCategory=person)(objectClass=user)(c=ZZ))";
 
 using var ldapConnection = new LdapConnection(new LdapDirectoryIdentifier(ldapHost), credential: null, AuthType.Kerberos);
