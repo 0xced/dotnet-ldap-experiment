@@ -17,7 +17,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Meziantou.Framework.ResxSourceGenerator" Version="1.0.11" PrivateAssets="all" />
+    <PackageReference Include="Meziantou.Framework.ResxSourceGenerator" Version="1.0.17" PrivateAssets="all" />
   </ItemGroup>
 
   <ItemGroup>
