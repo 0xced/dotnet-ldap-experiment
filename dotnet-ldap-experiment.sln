@@ -3,7 +3,7 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.0.31903.59
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "dotnet-ldap-experiment", "dotnet-ldap-experiment\dotnet-ldap-experiment.csproj", "{1F0CCFC7-4CF8-4A45-BEBC-BEDF3BDFFC71}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ldap", "ldap\ldap.csproj", "{1F0CCFC7-4CF8-4A45-BEBC-BEDF3BDFFC71}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "System.DirectoryServices.Protocols", "System.DirectoryServices.Protocols\System.DirectoryServices.Protocols.csproj", "{EE881D1E-A4C0-47AF-9739-9EC6C32F3796}"
 EndProject
