@@ -1,42 +1,53 @@
-﻿using System;
-using System.DirectoryServices.Protocols;
-using System.IO;
-using System.Linq;
+﻿using ldap;
+using System;
 using System.Reflection;
-using NuGet.Versioning;
+using System.Threading;
+using Spectre.Console;
+using Spectre.Console.Cli;
 
-var ldapHost = Environment.GetEnvironmentVariable("LDAP_HOST") ?? throw new ArgumentException("The LDAP_HOST environment variable must be set.");
-var ldapBase = Environment.GetEnvironmentVariable("LDAP_BASE");
-var ldapFilter = Environment.GetEnvironmentVariable("LDAP_FILTER") ?? "(&(objectCategory=person)(objectClass=user)(c=ZZ))";
+var app = new CommandApp();
+var cancellationTokenSource = new CancellationTokenSource();
 
-using var ldapConnection = new LdapConnection(new LdapDirectoryIdentifier(ldapHost), credential: null, AuthType.Kerberos);
-ldapConnection.SessionOptions.ReferralChasing = ReferralChasingOptions.None;
-var assembly = typeof(LdapConnection).Assembly;
-var version = SemanticVersion.Parse(assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? throw new InvalidDataException("Informational version is missing"));
-if (version.Major < 10)
+Console.CancelKeyPress += (_, eventArgs) =>
 {
-    // The fix is available since v10.0.0-preview.1.25080.5, see https://github.com/dotnet/runtime/pull/109450 and https://github.com/dotnet/runtime/commit/9970e70bb49f4e089a17dcea92882c21834ff4b1
-    // So explicitly setting the protocol version is only needed when using an earlier version
-    Console.WriteLine($"Enabling ProtocolVersion 3 for {assembly.GetName().Name} version {version}");
-    ldapConnection.SessionOptions.ProtocolVersion = 3;
-}
+    // Try to cancel gracefully the first time, then abort the process the second time Ctrl+C is pressed
+    eventArgs.Cancel = !cancellationTokenSource.IsCancellationRequested;
+    cancellationTokenSource.Cancel();
+};
 
-try
+app.Configure(config =>
 {
-    var searchRequest = new SearchRequest(ldapBase, ldapFilter, SearchScope.Subtree, "distinguishedName");
-    var response = (SearchResponse)ldapConnection.SendRequest(searchRequest);
-    foreach (SearchResultEntry entry in response.Entries)
+    config.AddCommand<SearchCommand>("search");
+
+    var assembly = typeof(Program).Assembly;
+    var version = assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? assembly.GetName().Version?.ToString() ?? "N/A";
+    config.SetApplicationVersion(version);
+    config.ConfigureConsole(RedirectionFriendlyConsole.Out);
+    config.SetExceptionHandler((exception, _) =>
     {
-        Console.WriteLine(entry.Attributes["distinguishedName"]?.GetValues(typeof(string))?.OfType<string>().FirstOrDefault());
-    }
-    Console.WriteLine($"Found {response.Entries.Count} entries");
+        switch (exception)
+        {
+            case OperationCanceledException when cancellationTokenSource.IsCancellationRequested:
+                return config.Settings.CancellationExitCode;
+            case CommandAppException { Pretty: not null } commandAppException:
+                RedirectionFriendlyConsole.Error.Write(commandAppException.Pretty);
+                break;
+            case CommandAppException commandAppException:
+                RedirectionFriendlyConsole.Error.WriteLine(commandAppException.Message, Color.Red);
+                break;
+            default:
+                RedirectionFriendlyConsole.Error.WriteException(exception, ExceptionFormats.ShortenPaths | ExceptionFormats.ShortenTypes);
+                break;
+        }
 
-    return 0;
-}
-catch (LdapException ldapException)
-{
-    Console.Error.WriteLine(ldapException.ServerErrorMessage);
-    Console.Error.WriteLine(ldapException);
+        if (exception is CommandAppException)
+        {
+            app.Run(["--help"]);
+            return 64; // EX_USAGE -- The command was used incorrectly, e.g., with the wrong number of arguments, a bad flag, a bad syntax in a parameter, or whatever.
+        }
 
-    return 1;
-}
+        return 70; // EX_SOFTWARE -- An internal software error has been detected.
+    });
+});
+
+return await app.RunAsync(args, cancellationTokenSource.Token);

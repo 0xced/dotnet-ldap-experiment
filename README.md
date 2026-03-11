@@ -1,4 +1,6 @@
-This project is used to work on a fix for [LdapConnection throws `LdapException: The feature is not supported` when using Negotiate or Kerberos authentication (#109449)](https://github.com/dotnet/runtime/issues/109449)
+This project was initially used to work on a fix for [LdapConnection throws `LdapException: The feature is not supported` when using Negotiate or Kerberos authentication (#109449)](https://github.com/dotnet/runtime/issues/109449)
+
+It's now used to play around with the [System.DirectoryServices.Protocols](https://nuget.org/packages/System.DirectoryServices.Protocols) package.
 
 The [System.DirectoryServices.Protocols.csproj](https://github.com/dotnet/runtime/blob/v8.0.10/src/libraries/System.DirectoryServices.Protocols/src/System.DirectoryServices.Protocols.csproj) project uses the [Arcade SDK](https://github.com/dotnet/arcade/blob/main/Documentation/ArcadeSdk.md) so it's pretty difficult to use by referencing it in a solution. Trying to do so results in an error.
 
