@@ -42,6 +42,10 @@ internal class SearchCommand(IAnsiConsole console) : AsyncCommand<SearchCommand.
         [Description("Set the LDAP debugging level. See https://github.com/openldap/openldap/blob/OPENLDAP_REL_ENG_2_6_13/contrib/ldapc%2B%2B/src/debug.h#L11-L15")]
         [CommandOption("-d <DebugLevel>")]
         public int? DebugLevel { get; init; } = null;
+
+        [Description("Whether to canonicalize the LDAP host name for SASL authentication.")]
+        [CommandOption("-c [CanonicalizeHostName]")]
+        public FlagValue<bool> CanonicalizeHostName { get; init; } = null!;
     }
 
     public override async Task<int> ExecuteAsync(CommandContext commandContext, Settings settings, CancellationToken cancellationToken)
@@ -76,6 +80,10 @@ internal class SearchCommand(IAnsiConsole console) : AsyncCommand<SearchCommand.
     private async Task<int> SearchAsync(Settings settings, CancellationToken cancellationToken)
     {
         using var connection = new LdapConnection(settings.Host);
+        if (settings.CanonicalizeHostName.IsSet)
+        {
+            connection.SessionOptions.CanonicalizeHostName = settings.CanonicalizeHostName.Value;
+        }
         connection.SessionOptions.ReferralChasing = ReferralChasingOptions.None;
 
         var ldap = new LdapSearcher(connection);
