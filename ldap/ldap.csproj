@@ -8,6 +8,10 @@
     <FromSource>true</FromSource>
   </PropertyGroup>
 
+  <ItemGroup>
+    <PackageReference Include="System.DirectoryServices" Version="10.0.8" />
+  </ItemGroup>
+
   <ItemGroup Condition="$(FromSource) != 'true'">
     <PackageReference Include="System.DirectoryServices.Protocols" Version="10.0.3" />
   </ItemGroup>
@@ -17,6 +21,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="DnsClient" Version="1.8.0" />
     <PackageReference Include="NuGet.Versioning" Version="7.3.0" />
     <PackageReference Include="Spectre.Console.Cli" Version="0.53.1" />
   </ItemGroup>

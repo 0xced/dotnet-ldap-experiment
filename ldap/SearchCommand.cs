@@ -3,13 +3,16 @@ using System.Buffers.Binary;
 using System.Collections;
 using System.ComponentModel;
 using System.Diagnostics.CodeAnalysis;
+using System.DirectoryServices.ActiveDirectory;
 using System.DirectoryServices.Protocols;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Net.Sockets;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using DnsClient;
 using Spectre.Console;
 using Spectre.Console.Cli;
 
@@ -24,17 +27,17 @@ internal class SearchCommand(IAnsiConsole console) : AsyncCommand<SearchCommand.
     [SuppressMessage("ReSharper", "AutoPropertyCanBeMadeGetOnly.Global", Justification = "Required for Spectre.Console.Cli binding")]
     internal class Settings : CommandSettings
     {
-        [Description("Specify the host on which the ldap server is running.")]
-        [CommandArgument(0, "<LdapHost>")]
-        public string Host { get; init; } = null!;
-
         [Description("The LDAP filter. It should conform to the string representation for search filters as defined in RFC 4515. Example: [b](objectClass=*)[/]")]
-        [CommandArgument(1, "<Filter>")]
+        [CommandArgument(0, "<Filter>")]
         public string Filter { get; init; } = null!;
 
         [Description("The attributes to retrieve. All attributes are retrieved if not specified.")]
-        [CommandArgument(2, "[Attributes]")]
+        [CommandArgument(1, "[Attributes]")]
         public string[] Attributes { get; init; } = [];
+
+        [Description("Specify the host on which the ldap server is running.")]
+        [CommandOption("-h <Host>")]
+        public string? Host { get; init; } = null;
 
         [Description("Use as the starting point for the search instead of the default.")]
         [CommandOption("-b <SearchBase>")]
@@ -80,7 +83,7 @@ internal class SearchCommand(IAnsiConsole console) : AsyncCommand<SearchCommand.
 
     private async Task<int> SearchAsync(Settings settings, CancellationToken cancellationToken)
     {
-        using var connection = new LdapConnection(settings.Host);
+        using var connection = await CreateConnectionAsync(settings, cancellationToken);
         if (settings.CanonicalizeHostName.IsSet)
         {
             connection.SessionOptions.CanonicalizeHostName = settings.CanonicalizeHostName.Value;
@@ -97,6 +100,55 @@ internal class SearchCommand(IAnsiConsole console) : AsyncCommand<SearchCommand.
         }
 
         return exitCode;
+    }
+
+    private async Task<LdapConnection> CreateConnectionAsync(Settings settings, CancellationToken cancellationToken)
+    {
+        if (settings.Host != null)
+        {
+            return new LdapConnection(settings.Host);
+        }
+
+        if (OperatingSystem.IsWindows())
+        {
+            var server = Domain.GetComputerDomain().Name;
+            console.WriteLine($"Connected to LDAP server {server}");
+            return new LdapConnection(server);
+        }
+
+        var dnsClient = new LookupClient();
+        var principal = GssApi.GetPrincipal();
+        if (principal == null)
+        {
+            if (OperatingSystem.IsMacOS())
+            {
+                principal = await ExtensibleSingleSignOn.GetRealmAsync(cancellationToken);
+            }
+            else
+            {
+                throw new InvalidOperationException("No principal found. Try to run 'kinit' or 'kinit <username>@<realm>'");
+            }
+        }
+
+        var realm = principal.Split('@').Last();
+        var hostEntries = await dnsClient.ResolveServiceAsync(realm, "ldap", ProtocolType.Tcp);
+        if (hostEntries.Length == 0)
+        {
+            throw new InvalidOperationException($"No LDAP service found for {realm}");
+        }
+
+        var ldapConnection = await hostEntries.GetFastestAsync(ConnectAsync, cancellationToken);
+        console.WriteLine($"Connected to LDAP server {string.Join(", ", ((LdapDirectoryIdentifier)ldapConnection.Directory).Servers)}");
+        return ldapConnection;
+    }
+
+    private static async Task<LdapConnection> ConnectAsync(ServiceHostEntry hostEntry, CancellationToken cancellationToken)
+    {
+        using var client = new TcpClient();
+        // https://jvns.ca/blog/2022/09/12/why-do-domain-names-end-with-a-dot-/
+        var server = hostEntry.HostName.TrimEnd('.');
+        await client.ConnectAsync(server, hostEntry.Port, cancellationToken);
+        return new LdapConnection(new LdapDirectoryIdentifier(server, hostEntry.Port));
     }
 
     private void WriteSearchResult(SearchResultEntry searchResult)
