@@ -1,4 +1,5 @@
 using System;
+using System.Buffers.Binary;
 using System.Collections;
 using System.ComponentModel;
 using System.Diagnostics.CodeAnalysis;
@@ -127,9 +128,54 @@ internal class SearchCommand(IAnsiConsole console) : AsyncCommand<SearchCommand.
                 }
                 catch (DecoderFallbackException)
                 {
-                    console.WriteLine($"    {Convert.ToHexString(value)}");
+                    if (SecurityIdentifier.TryParse(value, out var sid))
+                    {
+                        console.WriteLine($"    {sid}");
+                    }
+                    else if (value.Length == 16)
+                    {
+                        console.WriteLine($"    {new Guid(value, bigEndian: false):B}");
+                    }
+                    else
+                    {
+                        console.WriteLine($"    {Convert.ToHexString(value)}");
+                    }
                 }
             }
+        }
+    }
+
+    // Heavily adapted from https://github.com/jborean93/PSOpenAD/blob/bdc83ad3e3adc2ccff352150e560d4fc9b698453/src/PSOpenAD/Security/SecurityIdentifier.cs
+    private static class SecurityIdentifier
+    {
+        public static bool TryParse(ReadOnlySpan<byte> data, [NotNullWhen(true)] out string? sid)
+        {
+            if (data.Length < 8)
+            {
+                sid = null;
+                return false;
+            }
+
+            var revision = data[0];
+            var subAuthorityCount = data[1];
+            if (revision != 1 || data.Length != 8 + subAuthorityCount * 4)
+            {
+                sid = null;
+                return false;
+            }
+
+            Span<byte> rawAuthority = stackalloc byte[8];
+            data[2..8].CopyTo(rawAuthority[2..]);
+            var identifierAuthority = BinaryPrimitives.ReadUInt64BigEndian(rawAuthority);
+
+            var sidBuilder = new StringBuilder($"S-{revision}-{identifierAuthority}");
+            for (var i = 0; i < subAuthorityCount; i++)
+            {
+                sidBuilder.Append($"-{BitConverter.ToUInt32(data[(8 + i * 4)..])}");
+            }
+
+            sid = sidBuilder.ToString();
+            return true;
         }
     }
 }
