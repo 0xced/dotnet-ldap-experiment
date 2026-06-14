@@ -3,7 +3,6 @@ using System.Buffers.Binary;
 using System.Collections;
 using System.ComponentModel;
 using System.Diagnostics.CodeAnalysis;
-using System.DirectoryServices.ActiveDirectory;
 using System.DirectoryServices.Protocols;
 using System.Globalization;
 using System.IO;
@@ -13,6 +12,8 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using DnsClient;
+using Nager.PublicSuffix;
+using Nager.PublicSuffix.RuleProviders;
 using Spectre.Console;
 using Spectre.Console.Cli;
 
@@ -39,7 +40,7 @@ internal class SearchCommand(IAnsiConsole console) : AsyncCommand<SearchCommand.
         [CommandOption("-h <Host>")]
         public string? Host { get; init; } = null;
 
-        [Description("Use as the starting point for the search instead of the default.")]
+        [Description("Use as the starting point for the search instead of the default (derived from the LDAP server host).")]
         [CommandOption("-b <SearchBase>")]
         public string? SearchBase { get; init; } = null;
 
@@ -93,13 +94,32 @@ internal class SearchCommand(IAnsiConsole console) : AsyncCommand<SearchCommand.
         var ldap = new LdapSearcher(connection);
 
         var exitCode = 1;
-        await foreach (var searchResult in ldap.SearchAsync(settings.SearchBase, settings.Filter, settings.Attributes).WithCancellation(cancellationToken))
+        var searchBase = await GetSearchBaseAsync(settings, connection, cancellationToken);
+        await foreach (var searchResult in ldap.SearchAsync(searchBase, settings.Filter, settings.Attributes).WithCancellation(cancellationToken))
         {
             exitCode = 0;
             WriteSearchResult(searchResult);
         }
 
         return exitCode;
+    }
+
+    private static async Task<string> GetSearchBaseAsync(Settings settings, LdapConnection ldapConnection, CancellationToken cancellationToken)
+    {
+        if (settings.SearchBase != null)
+        {
+            return settings.SearchBase;
+        }
+
+        var ruleProvider = new SimpleHttpRuleProvider();
+        await ruleProvider.BuildAsync(cancellationToken: cancellationToken);
+
+        var domainParser = new DomainParser(ruleProvider);
+        var server = GetServer(ldapConnection);
+        var domainInfo = domainParser.Parse(server) ?? throw new InvalidOperationException($"Could not parse {server} as a DomainInfo");
+        var registrableDomain = domainInfo.RegistrableDomain ?? throw new InvalidOperationException($"Could not determine registrable domain for {server}");
+        var searchBase = registrableDomain.Split('.').Select(s => $"DC={s}").Aggregate((a, b) => $"{a},{b}");
+        return searchBase;
     }
 
     private async Task<LdapConnection> CreateConnectionAsync(Settings settings, CancellationToken cancellationToken)
@@ -118,7 +138,7 @@ internal class SearchCommand(IAnsiConsole console) : AsyncCommand<SearchCommand.
         }
 
         var ldapConnection = await hostEntries.GetFastestAsync(ConnectAsync, cancellationToken);
-        console.WriteLine($"Connected to LDAP server {string.Join(", ", ((LdapDirectoryIdentifier)ldapConnection.Directory).Servers)}");
+        console.WriteLine($"Connected to LDAP server {GetServer(ldapConnection)}");
         return ldapConnection;
     }
 
@@ -130,6 +150,8 @@ internal class SearchCommand(IAnsiConsole console) : AsyncCommand<SearchCommand.
         await client.ConnectAsync(server, hostEntry.Port, cancellationToken);
         return new LdapConnection(new LdapDirectoryIdentifier(server, hostEntry.Port));
     }
+
+    private static string GetServer(LdapConnection connection) => ((LdapDirectoryIdentifier)connection.Directory).Servers.Single();
 
     private static async Task<string> GetUserDnsDomainAsync(CancellationToken cancellationToken)
     {

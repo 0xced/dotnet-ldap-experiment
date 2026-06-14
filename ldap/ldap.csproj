@@ -9,6 +9,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="Nager.PublicSuffix" Version="3.8.0" />
     <PackageReference Include="System.DirectoryServices" Version="10.0.8" />
   </ItemGroup>
 
