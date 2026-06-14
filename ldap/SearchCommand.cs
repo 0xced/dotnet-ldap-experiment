@@ -53,7 +53,7 @@ internal class SearchCommand(IAnsiConsole console) : AsyncCommand<SearchCommand.
         public FlagValue<bool> CanonicalizeHostName { get; init; } = null!;
     }
 
-    public override async Task<int> ExecuteAsync(CommandContext commandContext, Settings settings, CancellationToken cancellationToken)
+    protected override async Task<int> ExecuteAsync(CommandContext commandContext, Settings settings, CancellationToken cancellationToken)
     {
         try
         {
