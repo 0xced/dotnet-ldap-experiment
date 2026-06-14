@@ -5,7 +5,7 @@
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <FromSource>true</FromSource>
+    <FromSource>false</FromSource>
   </PropertyGroup>
 
   <ItemGroup>
