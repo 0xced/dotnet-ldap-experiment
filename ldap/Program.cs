@@ -1,6 +1,5 @@
 ﻿using ldap;
 using System;
-using System.Reflection;
 using System.Threading;
 using Spectre.Console;
 using Spectre.Console.Cli;
@@ -19,9 +18,8 @@ app.Configure(config =>
 {
     config.AddCommand<SearchCommand>("search");
 
-    var assembly = typeof(Program).Assembly;
-    var version = assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? assembly.GetName().Version?.ToString() ?? "N/A";
-    config.SetApplicationVersion(version);
+    config.UseAssemblyInformationalVersion();
+    config.UseStrictParsing();
     config.ConfigureConsole(RedirectionFriendlyConsole.Out);
     config.SetExceptionHandler((exception, _) =>
     {
