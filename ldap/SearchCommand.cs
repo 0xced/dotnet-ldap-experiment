@@ -57,7 +57,7 @@ internal class SearchCommand(IAnsiConsole console) : AsyncCommand<SearchCommand.
     {
         try
         {
-            var status = $"Searching for {settings.Filter} on {settings.Host}";
+            var status = $"Searching for {settings.Filter}";
 
             if (settings.DebugLevel.HasValue)
             {
@@ -65,10 +65,10 @@ internal class SearchCommand(IAnsiConsole console) : AsyncCommand<SearchCommand.
 
                 // Don't use the console status because it interferes with debug output
                 console.WriteLine(status);
-                return await SearchAsync(settings, cancellationToken);
+                return await SearchAsync(null, settings, cancellationToken);
             }
 
-            return await console.Status().StartAsync(status, async _ => await SearchAsync(settings, cancellationToken));
+            return await console.Status().StartAsync(status, async context => await SearchAsync(context, settings, cancellationToken));
         }
         catch (LdapException exception)
         {
@@ -82,9 +82,11 @@ internal class SearchCommand(IAnsiConsole console) : AsyncCommand<SearchCommand.
         }
     }
 
-    private async Task<int> SearchAsync(Settings settings, CancellationToken cancellationToken)
+    private async Task<int> SearchAsync(StatusContext? context, Settings settings, CancellationToken cancellationToken)
     {
         using var connection = await CreateConnectionAsync(settings, cancellationToken);
+        context?.Status = $"Searching for {settings.Filter} on {GetServer(connection)}";
+
         if (settings.CanonicalizeHostName.IsSet)
         {
             connection.SessionOptions.CanonicalizeHostName = settings.CanonicalizeHostName.Value;
