@@ -109,32 +109,12 @@ internal class SearchCommand(IAnsiConsole console) : AsyncCommand<SearchCommand.
             return new LdapConnection(settings.Host);
         }
 
-        if (OperatingSystem.IsWindows())
-        {
-            var server = Domain.GetComputerDomain().Name;
-            console.WriteLine($"Connected to LDAP server {server}");
-            return new LdapConnection(server);
-        }
-
         var dnsClient = new LookupClient();
-        var principal = GssApi.GetPrincipal();
-        if (principal == null)
-        {
-            if (OperatingSystem.IsMacOS())
-            {
-                principal = await ExtensibleSingleSignOn.GetRealmAsync(cancellationToken);
-            }
-            else
-            {
-                throw new InvalidOperationException("No principal found. Try to run 'kinit' or 'kinit <username>@<realm>'");
-            }
-        }
-
-        var realm = principal.Split('@').Last();
-        var hostEntries = await dnsClient.ResolveServiceAsync(realm, "ldap", ProtocolType.Tcp);
+        var userDnsDomain = await GetUserDnsDomainAsync(cancellationToken);
+        var hostEntries = await dnsClient.ResolveServiceAsync(userDnsDomain, "ldap", ProtocolType.Tcp);
         if (hostEntries.Length == 0)
         {
-            throw new InvalidOperationException($"No LDAP service found for {realm}");
+            throw new InvalidOperationException($"No LDAP service found for {userDnsDomain}");
         }
 
         var ldapConnection = await hostEntries.GetFastestAsync(ConnectAsync, cancellationToken);
@@ -149,6 +129,29 @@ internal class SearchCommand(IAnsiConsole console) : AsyncCommand<SearchCommand.
         var server = hostEntry.HostName.TrimEnd('.');
         await client.ConnectAsync(server, hostEntry.Port, cancellationToken);
         return new LdapConnection(new LdapDirectoryIdentifier(server, hostEntry.Port));
+    }
+
+    private static async Task<string> GetUserDnsDomainAsync(CancellationToken cancellationToken)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return Environment.GetEnvironmentVariable("USERDNSDOMAIN") ?? throw new InvalidOperationException("The USERDNSDOMAIN environment variable is not set");
+        }
+
+        var principal = GssApi.GetPrincipal();
+        if (principal == null)
+        {
+            if (OperatingSystem.IsMacOS())
+            {
+                principal = await ExtensibleSingleSignOn.GetRealmAsync(cancellationToken);
+            }
+            else
+            {
+                throw new InvalidOperationException("No principal found. Try to run 'kinit' or 'kinit <username>@<realm>'");
+            }
+        }
+
+        return principal.Split('@').Last();
     }
 
     private void WriteSearchResult(SearchResultEntry searchResult)
