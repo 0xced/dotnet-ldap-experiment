@@ -3,6 +3,7 @@ using System.DirectoryServices.Protocols;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using System.Runtime.Versioning;
 
 namespace ldap;
 
@@ -41,6 +42,7 @@ internal static class LdapSessionOptionsExtensions
         /// This is an implementation for <see href="https://github.com/dotnet/runtime/issues/125454">[API Proposal]: Add a new CanonicalizeHostName property on LdapSessionOptions.</see>
         /// Note that the real implementation would not require using reflection.
         /// </remarks>
+        [UnsupportedOSPlatform("Windows")]
         public bool CanonicalizeHostName
         {
             get => !LdapNative.GetSaslNoCanon(options.GetLdapHandle());

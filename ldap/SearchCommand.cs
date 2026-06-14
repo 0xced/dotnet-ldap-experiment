@@ -87,7 +87,7 @@ internal class SearchCommand(IAnsiConsole console) : AsyncCommand<SearchCommand.
         using var connection = await CreateConnectionAsync(settings, cancellationToken);
         context?.Status = $"Searching for {settings.Filter} on {GetServer(connection)}";
 
-        if (settings.CanonicalizeHostName.IsSet)
+        if (settings.CanonicalizeHostName.IsSet && !OperatingSystem.IsWindows())
         {
             connection.SessionOptions.CanonicalizeHostName = settings.CanonicalizeHostName.Value;
         }
