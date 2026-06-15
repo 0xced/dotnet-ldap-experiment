@@ -6,7 +6,6 @@ using System.IO;
 using System.Linq;
 using System.Net;
 using System.Net.Sockets;
-using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -15,8 +14,10 @@ namespace ldap;
 
 public sealed class DnsSrvResolver(IPAddress dnsServer, int port = 53)
 {
-    // ReSharper disable once InconsistentNaming
+    // ReSharper disable InconsistentNaming
+    private const ushort IN = 1;
     private const ushort SRV = 33;
+    // ReSharper restore InconsistentNaming
 
     private readonly IPEndPoint _dnsServer = new(dnsServer, port);
 
@@ -24,203 +25,104 @@ public sealed class DnsSrvResolver(IPAddress dnsServer, int port = 53)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(fqdn);
 
-        var query = BuildQuery(fqdn.TrimEnd('.'));
-
-        var response = await QueryUdpAsync(query, cancellationToken);
-
-        if (IsTruncated(response))
-        {
-            response = await QueryTcpAsync(query, cancellationToken);
-        }
-
-        return ParseSrvResponse(response, query.Id);
+        var query = BuildQuery(fqdn);
+        using var response = await QueryTcpAsync(query, cancellationToken);
+        return ParseSrvResponse(response.Memory, query.Id);
     }
 
-    private async Task<byte[]> QueryUdpAsync(DnsQueryPacket query, CancellationToken cancellationToken)
-    {
-        using var udp = new UdpClient(AddressFamily.InterNetwork);
-        udp.Client.ReceiveTimeout = 5000;
-        udp.Client.SendTimeout = 5000;
-
-        await udp.SendAsync(query.Buffer, _dnsServer, cancellationToken);
-
-        try
-        {
-            var result = await udp.ReceiveAsync(cancellationToken);
-            return result.Buffer;
-        }
-        catch (ObjectDisposedException) when (cancellationToken.IsCancellationRequested)
-        {
-            throw new OperationCanceledException(cancellationToken);
-        }
-    }
-
-    private async Task<byte[]> QueryTcpAsync(DnsQueryPacket query, CancellationToken cancellationToken)
+    private async Task<IMemoryOwner<byte>> QueryTcpAsync(DnsQueryPacket query, CancellationToken cancellationToken)
     {
         using var tcp = new TcpClient(AddressFamily.InterNetwork);
         await tcp.ConnectAsync(_dnsServer.Address, _dnsServer.Port, cancellationToken);
 
         await using var stream = tcp.GetStream();
 
-        var lengthPrefix = new byte[2];
-        BinaryPrimitives.WriteUInt16BigEndian(lengthPrefix, Convert.ToUInt16(query.Buffer.Length));
-
-        await stream.WriteAsync(lengthPrefix, cancellationToken);
+        await stream.WriteUInt16Async(Convert.ToUInt16(query.Buffer.Length), cancellationToken);
         await stream.WriteAsync(query.Buffer, cancellationToken);
         await stream.FlushAsync(cancellationToken);
 
-        var responseLengthBuffer = new byte[2];
-        await ReadExactlyAsync(stream, responseLengthBuffer, cancellationToken);
-        var responseLength = BinaryPrimitives.ReadUInt16BigEndian(responseLengthBuffer);
-
-        var response = new byte[responseLength];
-        await ReadExactlyAsync(stream, response, cancellationToken);
+        var responseLength = await stream.ReadUInt16Async(cancellationToken);
+        var response = MemoryPool<byte>.Shared.Rent(responseLength);
+        await stream.ReadExactlyAsync(response.Memory[..responseLength], cancellationToken);
 
         return response;
     }
 
-    private static async Task ReadExactlyAsync(Stream stream, byte[] buffer, CancellationToken cancellationToken)
-    {
-        var offset = 0;
-        while (offset < buffer.Length)
-        {
-            var read = await stream.ReadAsync(buffer.AsMemory(offset), cancellationToken);
-            if (read == 0)
-                throw new EndOfStreamException("Unexpected end of stream.");
-            offset += read;
-        }
-    }
-
-    private static bool IsTruncated(byte[] response)
-    {
-        if (response.Length < 4)
-            throw new InvalidDataException("DNS response too short.");
-
-        var flags = BinaryPrimitives.ReadUInt16BigEndian(response.AsSpan(2, 2));
-        return (flags & 0x0200) != 0; // TC bit
-    }
-
     private static DnsQueryPacket BuildQuery(string fqdn)
     {
-        var buffer = new ArrayBufferWriter<byte>(512);
+        var buffer = new ArrayBufferWriter<byte>(initialCapacity: 512);
 
-        Span<byte> header = stackalloc byte[12];
-        var id = RandomNumberGenerator.GetHexString(4);
-        var messageId = Convert.ToUInt16(id, 16);
+        var messageId = Convert.ToUInt16(Random.Shared.Next(ushort.MaxValue + 1));
 
-        BinaryPrimitives.WriteUInt16BigEndian(header[0..2], messageId);
-        BinaryPrimitives.WriteUInt16BigEndian(header[2..4], 0x0100); // RD
-        BinaryPrimitives.WriteUInt16BigEndian(header[4..6], 1);      // QDCOUNT
-        BinaryPrimitives.WriteUInt16BigEndian(header[6..8], 0);      // ANCOUNT
-        BinaryPrimitives.WriteUInt16BigEndian(header[8..10], 0);     // NSCOUNT
-        BinaryPrimitives.WriteUInt16BigEndian(header[10..12], 0);    // ARCOUNT
+        // Header
+        buffer.WriteUInt16(messageId);
+        buffer.WriteUInt16(0x0100); // RD (Recursion Desired)
+        buffer.WriteUInt16(1);      // QDCOUNT
+        buffer.WriteUInt16(0);      // ANCOUNT
+        buffer.WriteUInt16(0);      // NSCOUNT
+        buffer.WriteUInt16(0);      // ARCOUNT
 
-        buffer.Write(header);
+        // Name
+        buffer.WriteQName(fqdn);
 
-        WriteQName(buffer, fqdn);
-
-        Span<byte> questionFooter = stackalloc byte[4];
-        BinaryPrimitives.WriteUInt16BigEndian(questionFooter[0..2], SRV);
-        BinaryPrimitives.WriteUInt16BigEndian(questionFooter[2..4], 1); // IN
-        buffer.Write(questionFooter);
+        // Footer
+        buffer.WriteUInt16(SRV);
+        buffer.WriteUInt16(IN);
 
         return new DnsQueryPacket(messageId, buffer.WrittenMemory);
     }
 
-    private static void WriteQName(IBufferWriter<byte> buffer, string fqdn)
+    private static IReadOnlyList<SrvRecord> ParseSrvResponse(Memory<byte> message, ushort expectedId)
     {
-        foreach (var label in fqdn.Split('.', StringSplitOptions.RemoveEmptyEntries))
-        {
-            var labelBytes = Encoding.ASCII.GetBytes(label);
-            if (labelBytes.Length is 0 or > 63)
-                throw new ArgumentException($"Invalid DNS label '{label}'.", nameof(fqdn));
-
-            buffer.Write(new[] { (byte)labelBytes.Length });
-            buffer.Write(labelBytes);
-        }
-
-        buffer.Write([0]);
-    }
-
-    private static IReadOnlyList<SrvRecord> ParseSrvResponse(byte[] message, ushort expectedId)
-    {
-        if (message.Length < 12)
-            throw new InvalidDataException("DNS response too short.");
-
         var reader = new DnsMessageReader(message);
 
+        // https://datatracker.ietf.org/doc/html/rfc1035#section-4.1.1
         var id = reader.ReadUInt16();
         if (id != expectedId)
-            throw new InvalidDataException("DNS response ID mismatch.");
+            throw new InvalidDataException($"DNS response ID mismatch. Expected: {expectedId}, actual: {id}");
 
         var flags = reader.ReadUInt16();
         var qdCount = reader.ReadUInt16();
         var anCount = reader.ReadUInt16();
-        var nsCount = reader.ReadUInt16();
-        var arCount = reader.ReadUInt16();
+        _ = reader.ReadUInt16(); // nsCount
+        _ = reader.ReadUInt16(); // arCount
 
         var isResponse = (flags & 0x8000) != 0;
         if (!isResponse)
             throw new InvalidDataException("Not a DNS response.");
 
-        var rcode = flags & 0x000F;
-        if (rcode != 0)
-            throw new DnsQueryException($"DNS server returned error code {rcode}.", rcode);
+        var responseCode = flags & 0x000F;
+        if (responseCode != 0)
+            throw new DnsQueryException($"DNS server returned error code {responseCode}.", responseCode);
 
+        // https://datatracker.ietf.org/doc/html/rfc1035#section-4.1.2
         for (var i = 0; i < qdCount; i++)
         {
-            _ = reader.ReadName();
-            _ = reader.ReadUInt16(); // qtype
-            _ = reader.ReadUInt16(); // qclass
+            _ = reader.ReadQName();
+            _ = reader.ReadUInt16(); // QTYPE
+            _ = reader.ReadUInt16(); // QCLASS
         }
 
         var results = new List<SrvRecord>();
 
+        // https://datatracker.ietf.org/doc/html/rfc1035#section-4.1.3
         for (var i = 0; i < anCount; i++)
         {
-            _ = reader.ReadName(); // name
-            var type = reader.ReadUInt16();
-            var @class = reader.ReadUInt16();
-            _ = reader.ReadUInt32(); // ttl
-            var rdLength = reader.ReadUInt16();
+            _ = reader.ReadQName(); // NAME
+            _ = reader.ReadUInt16(); // TYPE (SRV)
+            _ = reader.ReadUInt16(); // CLASS (IN)
+            _ = reader.ReadUInt32(); // TTL
+            _ = reader.ReadUInt16(); // RDLENGTH
 
-            var rdataStart = reader.Position;
+            var priority = reader.ReadUInt16();
+            var weight = reader.ReadUInt16();
+            var port = reader.ReadUInt16();
+            var target = reader.ReadQName();
 
-            if (type == SRV && @class == 1)
-            {
-                var priority = reader.ReadUInt16();
-                var weight = reader.ReadUInt16();
-                var port = reader.ReadUInt16();
-                var target = reader.ReadName();
-
-                results.Add(new SrvRecord(Target: target.TrimEnd('.'), Port: port, Priority: priority, Weight: weight));
-            }
-
-            reader.Position = rdataStart + rdLength;
-            if (reader.Position > message.Length)
-                throw new InvalidDataException("RDATA exceeds message length.");
+            results.Add(new SrvRecord(Target: target, Port: port, Priority: priority, Weight: weight));
         }
-
-        SkipResourceRecords(reader, nsCount);
-        SkipResourceRecords(reader, arCount);
 
         return results.OrderBy(r => r.Priority).ThenByDescending(r => r.Weight).ToArray();
-    }
-
-    private static void SkipResourceRecords(DnsMessageReader reader, int count)
-    {
-        for (var i = 0; i < count; i++)
-        {
-            _ = reader.ReadName();
-            _ = reader.ReadUInt16();
-            _ = reader.ReadUInt16();
-            _ = reader.ReadUInt32();
-            var rdLength = reader.ReadUInt16();
-            reader.Position += rdLength;
-
-            if (reader.Position > reader.Length)
-                throw new InvalidDataException("DNS record exceeds message length.");
-        }
     }
 
     private readonly record struct DnsQueryPacket(ushort Id, ReadOnlyMemory<byte> Buffer);
@@ -233,50 +135,50 @@ public sealed class DnsQueryException(string message, int responseCode) : Except
     public int ResponseCode { get; } = responseCode;
 }
 
-internal sealed class DnsMessageReader(byte[] buffer)
+internal sealed class DnsMessageReader(Memory<byte> buffer)
 {
-    public int Position { get; set; }
-    public int Length => buffer.Length;
+    private int _position;
 
     public ushort ReadUInt16()
     {
         EnsureAvailable(2);
-        var value = BinaryPrimitives.ReadUInt16BigEndian(buffer.AsSpan(Position, 2));
-        Position += 2;
+        var value = BinaryPrimitives.ReadUInt16BigEndian(buffer.Span.Slice(_position, 2));
+        _position += 2;
         return value;
     }
 
     public uint ReadUInt32()
     {
         EnsureAvailable(4);
-        var value = BinaryPrimitives.ReadUInt32BigEndian(buffer.AsSpan(Position, 4));
-        Position += 4;
+        var value = BinaryPrimitives.ReadUInt32BigEndian(buffer.Span.Slice(_position, 4));
+        _position += 4;
         return value;
     }
 
-    public string ReadName()
+    public string ReadQName()
     {
-        var originalPosition = Position;
+        var originalPosition = _position;
         var jumped = false;
         var jumpCount = 0;
-        var labels = new List<string>();
+        var labels = new StringBuilder(capacity: 512);
 
         while (true)
         {
-            EnsureAvailableAt(Position, 1);
-            var length = buffer[Position];
+            EnsureAvailable(1);
+            var length = buffer.Span[_position];
 
+            // https://datatracker.ietf.org/doc/html/rfc1035#section-4.1.4
             if ((length & 0xC0) == 0xC0)
             {
-                EnsureAvailableAt(Position, 2);
-                var pointer = ((length & 0x3F) << 8) | buffer[Position + 1];
+                EnsureAvailable(2);
+                var pointer = ((length & 0x3F) << 8) | buffer.Span[_position + 1];
 
                 if (!jumped)
                 {
-                    originalPosition = Position + 2;
+                    originalPosition = _position + 2;
                 }
 
-                Position = pointer;
+                _position = pointer;
                 jumped = true;
 
                 jumpCount++;
@@ -286,40 +188,84 @@ internal sealed class DnsMessageReader(byte[] buffer)
                 continue;
             }
 
-            Position++;
+            _position++;
 
             if (length == 0)
                 break;
 
-            EnsureAvailableAt(Position, length);
-            var label = Encoding.ASCII.GetString(buffer, Position, length);
-            labels.Add(label);
-            Position += length;
+            EnsureAvailable(length);
+            var label = Encoding.ASCII.GetString(buffer.Span.Slice(_position, length));
+            labels.Append(label);
+            labels.Append('.');
+            _position += length;
         }
 
         if (jumped)
         {
-            Position = originalPosition;
+            _position = originalPosition;
         }
 
-        return string.Join('.', labels);
+        return labels.ToString();
     }
 
-    private void EnsureAvailable(int count) => EnsureAvailableAt(Position, count);
-
-    private void EnsureAvailableAt(int position, int count)
+    private void EnsureAvailable(int count)
     {
-        if (position < 0 || position + count > buffer.Length)
+        if (_position < 0 || _position + count > buffer.Length)
             throw new InvalidDataException("Unexpected end of DNS message.");
     }
 }
 
 internal static class BufferWriterExtensions
 {
-    public static void Write(this IBufferWriter<byte> writer, ReadOnlySpan<byte> source)
+    extension(IBufferWriter<byte> writer)
     {
-        var span = writer.GetSpan(source.Length);
-        source.CopyTo(span);
-        writer.Advance(source.Length);
+        public void WriteQName(string fqdn)
+        {
+            foreach (var label in fqdn.Split('.', StringSplitOptions.RemoveEmptyEntries))
+            {
+                var labelBytes = Encoding.ASCII.GetBytes(label);
+                if (labelBytes.Length is 0 or > 63)
+                    throw new ArgumentException($"Invalid DNS label '{label}'. Length must be > 0 and < 64", nameof(fqdn));
+
+                writer.WriteByte(Convert.ToByte(labelBytes.Length));
+                writer.Write(labelBytes);
+            }
+
+            writer.WriteByte(0);
+        }
+
+        public void WriteUInt16(ushort value)
+        {
+            Span<byte> span = stackalloc byte[sizeof(ushort)];
+            BinaryPrimitives.WriteUInt16BigEndian(span, value);
+            writer.Write(span);
+        }
+
+        private void WriteByte(byte value)
+        {
+            Span<byte> span = stackalloc byte[sizeof(byte)];
+            span[0] = value;
+            writer.Write(span);
+        }
+    }
+}
+
+internal static class StreamBigEndianExtensions
+{
+    private static readonly Memory<byte> buffer = new byte[sizeof(ushort)];
+
+    extension(Stream stream)
+    {
+        public async Task<ushort> ReadUInt16Async(CancellationToken cancellationToken)
+        {
+            await stream.ReadExactlyAsync(buffer, cancellationToken);
+            return BinaryPrimitives.ReadUInt16BigEndian(buffer.Span);
+        }
+
+        public async Task WriteUInt16Async(ushort value, CancellationToken cancellationToken)
+        {
+            BinaryPrimitives.WriteUInt16BigEndian(buffer.Span, value);
+            await stream.WriteAsync(buffer, cancellationToken);
+        }
     }
 }
