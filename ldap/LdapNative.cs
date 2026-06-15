@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
@@ -7,6 +8,7 @@ namespace ldap;
 
 // Additions to https://github.com/dotnet/runtime/blob/v10.0.4/src/libraries/Common/src/Interop/Linux/OpenLdap/Interop.Ldap.cs
 // and https://github.com/dotnet/runtime/blob/v10.0.4/src/libraries/Common/src/Interop/Windows/Wldap32/Interop.Ldap.cs
+[SuppressMessage("ReSharper", "InconsistentNaming", Justification = "Matches native API")]
 internal static partial class LdapNative
 {
     // https://github.com/dotnet/runtime/blob/v10.0.4/src/libraries/Common/src/Interop/Linux/Interop.Libraries.cs#L12
@@ -49,12 +51,14 @@ internal static partial class LdapNative
         public static partial int ldap_set_option_int(IntPtr ldapHandle, int option, ref int inValue);
     }
 
+    // https://github.com/dotnet/runtime/blob/v10.0.4/src/libraries/Common/src/Interop/Interop.Ldap.cs#L158
+    private const int LDAP_OPT_DEBUG_LEVEL = 0x5001;
+
+    // https://github.com/openldap/openldap/blob/OPENLDAP_REL_ENG_2_6_13/include/ldap.h#L203
+    private const int LDAP_OPT_X_SASL_NOCANON = 0x610b;
+
     public static int SetDebugLevel(int level)
     {
-        // ReSharper disable once InconsistentNaming
-        // https://github.com/dotnet/runtime/blob/v10.0.4/src/libraries/Common/src/Interop/Interop.Ldap.cs#L158
-        const int LDAP_OPT_DEBUG_LEVEL = 0x5001;
-
         if (OperatingSystem.IsMacOS())
             return MacOS.ldap_set_option_int(IntPtr.Zero, LDAP_OPT_DEBUG_LEVEL, ref level);
 
@@ -70,9 +74,6 @@ internal static partial class LdapNative
         if (OperatingSystem.IsWindows())
             throw new PlatformNotSupportedException("LDAP_OPT_X_SASL_NOCANON is not supported on Windows, see https://learn.microsoft.com/en-us/previous-versions/windows/desktop/ldap/session-options");
 
-        // ReSharper disable once InconsistentNaming
-        // https://github.com/openldap/openldap/blob/OPENLDAP_REL_ENG_2_6_13/include/ldap.h#L203
-        const int LDAP_OPT_X_SASL_NOCANON = 0x610b;
         bool result;
 
         if (OperatingSystem.IsMacOS())
@@ -88,10 +89,6 @@ internal static partial class LdapNative
     {
         if (OperatingSystem.IsWindows())
             throw new PlatformNotSupportedException("LDAP_OPT_X_SASL_NOCANON is not supported on Windows, see https://learn.microsoft.com/en-us/previous-versions/windows/desktop/ldap/session-options");
-
-        // ReSharper disable once InconsistentNaming
-        // https://github.com/openldap/openldap/blob/OPENLDAP_REL_ENG_2_6_13/include/ldap.h#L203
-        const int LDAP_OPT_X_SASL_NOCANON = 0x610b;
 
         if (OperatingSystem.IsMacOS())
             return MacOS.ldap_set_option_bool(ldapHandle, LDAP_OPT_X_SASL_NOCANON, value);
