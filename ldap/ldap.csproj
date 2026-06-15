@@ -22,7 +22,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="DnsClient" Version="1.8.0" />
     <PackageReference Include="NuGet.Versioning" Version="7.6.0" />
     <PackageReference Include="Spectre.Console.Cli" Version="0.55.0" />
   </ItemGroup>

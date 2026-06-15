@@ -7,11 +7,11 @@ using System.DirectoryServices.Protocols;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Net.NetworkInformation;
 using System.Net.Sockets;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
-using DnsClient;
 using Meziantou.Framework;
 using Spectre.Console;
 using Spectre.Console.Cli;
@@ -125,26 +125,37 @@ internal class SearchCommand(IAnsiConsole console) : AsyncCommand<SearchCommand.
             return new LdapConnection(settings.Host);
         }
 
-        var dnsClient = new LookupClient();
+        var dnsServers = NetworkInterface.GetAllNetworkInterfaces()
+            .OrderBy(e => e.NetworkInterfaceType)
+            .Where(e => e.OperationalStatus is OperationalStatus.Up or OperationalStatus.Unknown && e.NetworkInterfaceType is not (NetworkInterfaceType.Loopback or NetworkInterfaceType.Unknown))
+            .SelectMany(e => e.GetIPProperties().DnsAddresses)
+            .Distinct()
+            .ToList();
+        if (dnsServers.Count == 0)
+        {
+            throw new InvalidOperationException("No DNS servers found");
+        }
+
+        var dnsClient = new DnsSrvResolver(dnsServers.First());
         var userDnsDomain = await GetUserDnsDomainAsync(cancellationToken);
-        var hostEntries = await dnsClient.ResolveServiceAsync(userDnsDomain, "ldap", ProtocolType.Tcp);
-        if (hostEntries.Length == 0)
+        var srvRecords = await dnsClient.QuerySrvAsync($"_ldap._tcp.{userDnsDomain}", cancellationToken);
+        if (srvRecords.Count == 0)
         {
             throw new InvalidOperationException($"No LDAP service found for {userDnsDomain}");
         }
 
-        var ldapConnection = await hostEntries.GetFastestAsync(ConnectAsync, cancellationToken);
+        var ldapConnection = await srvRecords.GetFastestAsync(ConnectAsync, cancellationToken);
         console.WriteLine($"Connected to LDAP server {GetServer(ldapConnection)}");
         return ldapConnection;
     }
 
-    private static async Task<LdapConnection> ConnectAsync(ServiceHostEntry hostEntry, CancellationToken cancellationToken)
+    private static async Task<LdapConnection> ConnectAsync(SrvRecord srvRecord, CancellationToken cancellationToken)
     {
         using var client = new TcpClient();
         // https://jvns.ca/blog/2022/09/12/why-do-domain-names-end-with-a-dot-/
-        var server = hostEntry.HostName.TrimEnd('.');
-        await client.ConnectAsync(server, hostEntry.Port, cancellationToken);
-        return new LdapConnection(new LdapDirectoryIdentifier(server, hostEntry.Port));
+        var server = srvRecord.Target.TrimEnd('.');
+        await client.ConnectAsync(server, srvRecord.Port, cancellationToken);
+        return new LdapConnection(new LdapDirectoryIdentifier(server, srvRecord.Port));
     }
 
     private static string GetServer(LdapConnection connection) => ((LdapDirectoryIdentifier)connection.Directory).Servers.Single();
