@@ -12,8 +12,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using DnsClient;
-using Nager.PublicSuffix;
-using Nager.PublicSuffix.RuleProviders;
+using Meziantou.Framework;
 using Spectre.Console;
 using Spectre.Console.Cli;
 
@@ -96,7 +95,7 @@ internal class SearchCommand(IAnsiConsole console) : AsyncCommand<SearchCommand.
         var ldap = new LdapSearcher(connection);
 
         var exitCode = 1;
-        var searchBase = await GetSearchBaseAsync(settings, connection, cancellationToken);
+        var searchBase = GetSearchBase(settings, connection);
         await foreach (var searchResult in ldap.SearchAsync(searchBase, settings.Filter, settings.Attributes, cancellationToken: cancellationToken))
         {
             exitCode = 0;
@@ -106,20 +105,15 @@ internal class SearchCommand(IAnsiConsole console) : AsyncCommand<SearchCommand.
         return exitCode;
     }
 
-    private static async Task<string> GetSearchBaseAsync(Settings settings, LdapConnection ldapConnection, CancellationToken cancellationToken)
+    private static string GetSearchBase(Settings settings, LdapConnection ldapConnection)
     {
         if (settings.SearchBase != null)
         {
             return settings.SearchBase;
         }
 
-        var ruleProvider = new SimpleHttpRuleProvider();
-        await ruleProvider.BuildAsync(cancellationToken: cancellationToken);
-
-        var domainParser = new DomainParser(ruleProvider);
         var server = GetServer(ldapConnection);
-        var domainInfo = domainParser.Parse(server) ?? throw new InvalidOperationException($"Could not parse {server} as a DomainInfo");
-        var registrableDomain = domainInfo.RegistrableDomain ?? throw new InvalidOperationException($"Could not determine registrable domain for {server}");
+        var registrableDomain = PublicSuffixList.GetRegistrableDomain(server) ?? throw new InvalidOperationException($"Could not determine registrable domain for {server}");
         var searchBase = registrableDomain.Split('.').Select(s => $"DC={s}").Aggregate((a, b) => $"{a},{b}");
         return searchBase;
     }
