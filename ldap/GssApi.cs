@@ -11,6 +11,7 @@ public static class GssApi
 
     private const uint GSS_S_COMPLETE = 0;
     private const uint GSS_S_NO_CRED = 0x70000;
+    private const uint GSS_S_CREDENTIALS_EXPIRED = 0xB0000;
 
     private const int GSS_C_INITIATE = 1;
 
@@ -70,7 +71,7 @@ public static class GssApi
     private static IntPtr gss_inquire_cred(IntPtr cred)
     {
         var major = gss_inquire_cred(out var minor, cred, out var name, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero);
-        if (major == GSS_S_NO_CRED)
+        if (major is GSS_S_NO_CRED or GSS_S_CREDENTIALS_EXPIRED)
         {
             gss_release_cred(out _, ref cred);
             return name;
