@@ -97,7 +97,7 @@ internal class SearchCommand(IAnsiConsole console) : AsyncCommand<SearchCommand.
 
         var exitCode = 1;
         var searchBase = await GetSearchBaseAsync(settings, connection, cancellationToken);
-        await foreach (var searchResult in ldap.SearchAsync(searchBase, settings.Filter, settings.Attributes).WithCancellation(cancellationToken))
+        await foreach (var searchResult in ldap.SearchAsync(searchBase, settings.Filter, settings.Attributes, cancellationToken: cancellationToken))
         {
             exitCode = 0;
             WriteSearchResult(searchResult);
